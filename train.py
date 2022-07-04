@@ -103,11 +103,17 @@ def train(args):
             f'{best_model.metrics_names[3]} of {scores[3]}%'
         )
 
-        if len(loss_per_fold) == 0:
-            best_model.save(args.save_model_path)
-        else:
-            if scores[0] < min(loss_per_fold):
-                best_model.save(args.save_model_path)
+        if not os.path.isdir('models'):
+            os.mkdir('models')
+
+        model_path = os.path.join('models', args.save_model_name + f'_fold_{fold_no}_loss_{round(scores[0])}.h5')
+        best_model.save(model_path)
+
+        # if len(loss_per_fold) == 0:
+        #     best_model.save(args.save_model_path)
+        # else:
+        #     if scores[0] < min(loss_per_fold):
+        #         best_model.save(args.save_model_path)
 
         loss_per_fold.append(scores[0])
         rmse_per_fold.append(scores[1])
@@ -149,7 +155,7 @@ if __name__ == "__main__":
         "-base_model", type=str, default=None, help="Path to pretrained .h5 model"
     )
     parser.add_argument(
-        "-save_model_path", type=str, default="models/best_model.h5", help="Path to save trained model"
+        "-save_model_name", type=str, default="best_model", help="Path to save trained model"
     )
     parser.add_argument(
         "-rs", type=int, default=1234, help="Random seed"
