@@ -13,20 +13,35 @@ from sklearn.model_selection import KFold, train_test_split
 from model import build_model
 
 
-def load_images_from_folder(folder):
+def load_images_from_folder(folder: str):
+    """
+    Load images and labels from folder with images for vigna data.
+    Add zeros as last row for match CNN's input shape (6, 28, 3)
+    :param folder: path to labeled images folder
+    """
+
     images = []
     days = []
     for filename in os.listdir(folder):
         img = cv.imread(os.path.join(folder, filename))
         if img is not None:
+            img = np.asarray(img)
+            zeros_shape = (1, img.shape[1], img.shape[2])
+            img = np.r_[img, np.zeros(zeros_shape, dtype=np.float32)]
             aio_plant = filename.split("_")
             flowering_time = aio_plant[2].split(".")[0]
-            images.append(np.asarray(img).astype(np.float32))
+            images.append(img.astype(np.float32))
             days.append(int(flowering_time))
     return np.asarray(images), np.asarray(days)
 
 
-def load_images_from_csv(folder, annotations):
+def load_images_from_csv(folder: str, annotations: str):
+    """
+    Load images from folder and labels from csv file for chickpea data.
+    :param annotations: path to annotation csv file
+    :param folder: path to unlabeled images folder
+    """
+
     images = []
     df = pd.read_csv(annotations, header=None)
     days = df.iloc[:, 0].values

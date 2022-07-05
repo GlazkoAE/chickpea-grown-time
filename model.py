@@ -19,7 +19,7 @@ def build_model(hp):
             kernel_size=(3, 3),
             padding="same",
             strides=(1, 1),
-            input_shape=(5, 28, 3),
+            input_shape=(6, 28, 3),
             activation=hp.Choice(
                 "first_conv2d_activation",
                 ["relu", "tanh"],
