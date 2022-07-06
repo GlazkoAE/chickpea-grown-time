@@ -1,16 +1,16 @@
 import argparse
 import logging
 import os
+import wandb
 
 import cv2 as cv
 import keras_tuner as kt
 import numpy as np
 import pandas as pd
 from keras import backend as K
-from keras.layers import Activation
 from keras.models import load_model
-from keras.utils import get_custom_objects
 from sklearn.model_selection import KFold, train_test_split
+from wandb.keras import WandbCallback
 
 from model import build_model
 
@@ -54,6 +54,7 @@ def load_images_from_csv(folder: str, annotations: str):
 
 
 def train(args):
+    # wandb.init(project='chickpea_grown_predict', reinit=True)
     logging.getLogger("tensorflow").setLevel(logging.ERROR)
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
     K.set_image_data_format("channels_last")
@@ -104,6 +105,13 @@ def train(args):
     fold_no = 1
     kfold = KFold(n_splits=num_folds, shuffle=True)
     for tr, valid in kfold.split(train_images, train_predicts):
+        wandb.init(
+            project='chickpea_grown_predict',
+            name='fold_' + str(fold_no),
+            group=args.wandb_group_name,
+            reinit=True
+        )
+
         print(
             "------------------------------------------------------------------------"
         )
@@ -115,6 +123,7 @@ def train(args):
             epochs=epochs,
             verbose=verbosity,
             validation_split=0.2,
+            callbacks=[WandbCallback()],
         )
 
         # Generate generalization metrics
@@ -176,6 +185,9 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-wandb_group_name", type=str, default="vigna", help="Entity name for wandb"
+    )
     parser.add_argument(
         "-images_dir", type=str, default="datasets/vigna", help="Directory with images"
     )
