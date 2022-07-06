@@ -1,14 +1,9 @@
-from keras import backend as K
 from keras.layers import (BatchNormalization, Conv2D, Dense, Flatten,
                           MaxPooling2D)
 from keras.metrics import MeanAbsoluteError as mae
 from keras.metrics import MeanAbsolutePercentageError as mape
 from keras.metrics import RootMeanSquaredError as rmse
 from keras.models import Sequential
-
-
-def scaled_sigmoid(x, scale_factor=365):
-    return scale_factor * K.sigmoid(x)
 
 
 def build_model(hp):
@@ -55,7 +50,7 @@ def build_model(hp):
     regression_model.add(Flatten(name="flatten"))
     regression_model.add(Dense(128, activation="relu"))
     regression_model.add(Dense(11, activation="softmax"))
-    regression_model.add(Dense(1, activation=scaled_sigmoid))
+    regression_model.add(Dense(1, activation="sigmoid"))
 
     regression_model.compile(
         optimizer="adam", loss="mse", metrics=[rmse(), mape(), mae()]

@@ -7,7 +7,9 @@ import keras_tuner as kt
 import numpy as np
 import pandas as pd
 from keras import backend as K
+from keras.layers import Activation
 from keras.models import load_model
+from keras.utils import get_custom_objects
 from sklearn.model_selection import KFold, train_test_split
 
 from model import build_model
@@ -44,9 +46,9 @@ def load_images_from_csv(folder: str, annotations: str):
 
     images = []
     df = pd.read_csv(annotations, header=None)
-    days = df.iloc[:, 0].values
-    for image_name in df.iloc[:, 1].values:
-        img = cv.imread(os.path.join(folder, image_name))
+    days = df.iloc[:, 1].values
+    for image_name in df.iloc[:, 0].values:
+        img = cv.imread(os.path.join(folder, str(image_name)))
         images.append(img)
     return np.asarray(images), days
 
@@ -62,7 +64,8 @@ def train(args):
         data_images, data_labels = load_images_from_csv(
             args.images_dir, args.annotation_file
         )
-    data_images /= 255.0
+    data_images = data_images / 255.0
+    data_labels = data_labels / 365.0
 
     train_images, test_images, train_predicts, test_labels = train_test_split(
         data_images, data_labels, test_size=0.2, random_state=args.rs
@@ -97,8 +100,6 @@ def train(args):
     mae_per_fold = []
     loss_per_fold = []
 
-    data_images = data_images / 255.0
-
     # Define the K-fold Cross Validator
     fold_no = 1
     kfold = KFold(n_splits=num_folds, shuffle=True)
@@ -120,10 +121,10 @@ def train(args):
         scores = best_model.evaluate(data_images[valid], data_labels[valid], verbose=0)
         print(
             f"Score for fold {fold_no}: "
-            f"{best_model.metrics_names[0]} of {scores[0]};"
-            f"{best_model.metrics_names[1]} of {scores[1]}%"
-            f"{best_model.metrics_names[2]} of {scores[2]}%"
-            f"{best_model.metrics_names[3]} of {scores[3]}%"
+            f"{best_model.metrics_names[0]} of {scores[0]}\n"
+            f"{best_model.metrics_names[1]} of {scores[1]}\n"
+            f"{best_model.metrics_names[2]} of {scores[2]}\n"
+            f"{best_model.metrics_names[3]} of {scores[3]}\n"
         )
 
         if not os.path.isdir("models"):
@@ -131,7 +132,7 @@ def train(args):
 
         model_path = os.path.join(
             "models",
-            args.save_model_name + f"_fold_{fold_no}_loss_{round(scores[0])}.h5",
+            args.save_model_name + f"_fold_{fold_no}_mae_{round(scores[3] * 365)}.h5",
         )
         best_model.save(model_path)
 
