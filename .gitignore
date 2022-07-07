@@ -133,3 +133,4 @@ Scripts/
 pyvenv.cfg
 share/
 untitled_project/
+wandb/
