@@ -1,6 +1,8 @@
 import argparse
 import logging
 import os
+
+import keras.models
 import wandb
 
 import cv2 as cv
@@ -11,6 +13,7 @@ from keras import backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.models import load_model
 from sklearn.model_selection import train_test_split
+from keras.utils import set_random_seed
 from wandb.keras import WandbCallback
 
 from model import build_model
@@ -55,7 +58,8 @@ def load_images_from_csv(folder: str, annotations: str):
 
 
 def train(args):
-    # wandb.init(project='chickpea_grown_predict', reinit=True)
+    np.random.seed(args.rs)
+    set_random_seed(args.rs)
     logging.getLogger("tensorflow").setLevel(logging.ERROR)
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
     K.set_image_data_format("channels_last")
@@ -77,7 +81,7 @@ def train(args):
         tuner = kt.RandomSearch(
             build_model,
             objective="val_loss",
-            max_trials=10,
+            max_trials=5,
             seed=args.rs,
             overwrite=True,
         )
@@ -88,10 +92,9 @@ def train(args):
             batch_size=args.tuner_bs,
             validation_split=0.2,
         )
-        tuner.results_summary()
-        best_models = tuner.get_best_models(num_models=3)
+        best_model = tuner.get_best_models()[0]
     else:
-        best_models = [load_model(args.base_model)]
+        best_model = load_model(args.base_model)
 
     batch_size = args.bs
     epochs = args.epochs
@@ -100,7 +103,12 @@ def train(args):
     if not os.path.isdir("models"):
         os.mkdir("models")
 
-    for num, model in enumerate(best_models):
+    for num in range(3):
+        np.random.seed(args.rs + num)
+        set_random_seed(args.rs + num)
+
+        model = best_model
+
         model_name = args.model_name + '_model_' + str(num + 1)
         model_path = 'models/' + model_name + '.h5'
 
@@ -119,14 +127,14 @@ def train(args):
         early_stopping = EarlyStopping(
             monitor='val_loss',
             patience=10,
-            verbose=0,
+            verbose=verbosity,
             mode='min'
         )
         reduce_lr_loss = ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.1,
             patience=7,
-            verbose=1,
+            verbose=verbosity,
             epsilon=1e-4,
             mode='min'
         )
@@ -147,7 +155,7 @@ def train(args):
         )
 
         # Generate generalization metrics
-        model = load_model(model_path)
+        model = keras.models.load_model(model_path)
         scores = model.evaluate(test_images, test_labels, verbose=0)
         print(
             f"{model.metrics_names[0]} of {scores[0]}\n"
@@ -157,6 +165,7 @@ def train(args):
         )
 
         wandb_session.finish()
+    wandb.finish()
 
 
 if __name__ == "__main__":

@@ -1,23 +1,30 @@
-import glob
+import wandb
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from train import load_images_from_csv
-import tensorflow as tf
 
-from sklearn.model_selection import train_test_split
 from keras.models import load_model
-
-tf.compat.v1.disable_eager_execution()
-
-img_size = (28, 6)
-images = glob.glob('datasets/chickpea/images/*.*')
+from wandb.keras import WandbCallback
 
 
 class Client:
 
-    def __init__(self, path_to_model='models/chickpea_model_1.h5',
-                 csv_file='datasets/chickpea/response1.csv'):
-        self.model = load_model(path_to_model)
+    def __init__(self,
+                 path_to_model,
+                 csv_file,
+                 images_dir,
+                 model_save_path='models/client_model.h5',
+                 name='client_model',
+                 wandb_group='chickpea_clients'):
+
+        self.name = name
+        self.wandb_group = wandb_group
+        self.images_dir = images_dir
         self.path_to_csv = csv_file
-        self.x_train, self.y_train, self.x_test, self.y_test = self.get_xy()
+        self.images, self.labels = self.load_data()
+        self.init_train_callbacks(model_save_path)
+        self.model = load_model(path_to_model)
+
+        self.init_train_callbacks(model_save_path)
 
     def get_model(self):
         return self.model
@@ -25,27 +32,64 @@ class Client:
     def get_parameters(self):
         return self.model.get_weights()
 
-    def fit(self, parameters):
-        self.model.set_weights(parameters)
-        self.model.fit(self.x_train, self.y_train, epochs=5, batch_size=32)
-        return self.model.get_weights(), len(self.x_train), {}
+    def set_parameters(self, weights):
+        self.model.set_weights(weights)
 
-    def evaluate(self, parameters):
-        self.model.set_weights(parameters)
-        loss, accuracy = self.model.evaluate(self.x_test, self.y_test)
-        return loss, len(self.x_test), {"accuracy": accuracy}
+    def train(self, epochs=20, batch_size=64):
+        wandb_session = self.start_wandb()
+        self.model.fit(
+            self.images,
+            self.labels,
+            batch_size=batch_size,
+            epochs=epochs,
+            verbose=0,
+            validation_split=0.2,
+            callbacks=[
+                self.mcp_save,
+                self.early_stopping,
+                self.reduce_lr_loss,
+                WandbCallback()
+            ],
+        )
+        wandb_session.finish()
 
-    def get_xy(self):
-        data_images, data_labels = load_images_from_csv('datasets/chickpea/images',
+    def start_wandb(self):
+        wandb_session = wandb.init(
+            project='chickpea_grown_predict',
+            name=self.name,
+            group=self.wandb_group,
+            reinit=True
+        )
+        return wandb_session
+
+    def load_data(self):
+        data_images, data_labels = load_images_from_csv(self.images_dir,
                                                         self.path_to_csv
                                                         )
         data_images = data_images / 255.0
         data_labels = data_labels / 365.0
 
-        x_train, x_test, y_train, y_test = train_test_split(
-            data_images, data_labels, test_size=0.2, random_state=1234
-        )
-        return x_train, y_train, x_test, y_test
+        return data_images, data_labels
 
-    def set_parameters(self, mean_weights):
-        self.model.set_weights(mean_weights)
+    def init_train_callbacks(self, model_save_path):
+        self.mcp_save = ModelCheckpoint(
+            model_save_path,
+            save_best_only=True,
+            save_weights_only=True,
+            monitor='val_loss',
+            mode='min'
+        )
+        self.early_stopping = EarlyStopping(
+            monitor='val_loss',
+            patience=10,
+            verbose=0,
+            mode='min'
+        )
+        self.reduce_lr_loss = ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.1,
+            patience=7,
+            verbose=0,
+            min_delta=1e-4,
+            mode='min'
+        )

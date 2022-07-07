@@ -1,36 +1,59 @@
 from client import Client
 from server import Server
+import os
+from progress.bar import Bar
 
-path_client_1 = 'models/chickpea_model_1.h5'
-path_client_2 = 'models/chickpea_model_2.h5'
-path_client_3 = 'models/chickpea_model_3.h5'
-path_client_4 = 'models/chickpea_model_4.h5'
-path_client_5 = 'models/chickpea_model_5.h5'
-path_client_6 = 'models/chickpea_model_6.h5'
-dataset_1 = 'datasets/chickpea/response1.csv'
-dataset_2 = 'datasets/chickpea/response2.csv'
-clients = []
 
-client1 = Client(path_client_1, dataset_1)
-client2 = Client(path_client_2, dataset_1)
-client3 = Client(path_client_3, dataset_1)
-client4 = Client(path_client_4, dataset_2)
-client5 = Client(path_client_5, dataset_2)
-client6 = Client(path_client_6, dataset_2)
+def main():
+    num_of_rounds = 10
+    model_dir = 'models'
+    model_names = ['vigna_model_1.h5', 'vigna_model_2.h5', 'vigna_model_3.h5']
+    dataset_dir = os.path.join('datasets', 'chickpea')
+    dataset_names = ['response1.csv', 'response2.csv']
+    images_path = os.path.join(dataset_dir, 'images')
 
-clients.append(client1)
-clients.append(client2)
-clients.append(client3)
-clients.append(client4)
-clients.append(client5)
-clients.append(client6)
+    models = []
+    for model in model_names:
+        models.append(os.path.join(model_dir, model))
 
-server = Server(clients)
+    datasets = []
+    for file in dataset_names:
+        datasets.append(os.path.join(dataset_dir, file))
 
-num_of_rounds = 10
+    with Bar('Clients initialization', max=(len(datasets)) * (len(models))) as bar:
+        clients = []
+        client_num = 0
+        for dataset in datasets:
+            for model in models:
+                client_num += 1
+                clients.append(Client(path_to_model=model,
+                                      csv_file=dataset,
+                                      images_dir=images_path,
+                                      name='client_' + str(client_num),
+                                      wandb_group='chickpea_clients',
+                                      model_save_path='models/client_' + str(client_num) + '.h5'
+                                      ))
+                bar.next()
 
-for num in range(num_of_rounds):
-    for i in range(len(clients)):
-        clients[i].fit(clients[i].get_parameters())
-    mean_weights = server.start(clients)
-    clients[i].set_parameters(mean_weights)
+    print('Server initialization')
+    server = Server(clients)
+    print('Done')
+
+    for round_num in range(num_of_rounds):
+        print(f'Start of round {round_num+1} of federated learning')
+
+        # Simulate training each client's model
+        with Bar('Clients training simulation', max=len(clients)) as bar:
+            for client in clients:
+                client.train()
+                bar.next()
+
+        # Calculate average weights
+        print('  Calculating average weights and sending them to all clients...')
+        server.start(clients)
+        print('  Done')
+        print()
+
+
+if __name__ == "__main__":
+    main()
