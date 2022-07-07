@@ -104,7 +104,7 @@ def train(args):
         model_name = args.model_name + '_model_' + str(num + 1)
         model_path = 'models/' + model_name + '.h5'
 
-        wandb.init(
+        wandb_session = wandb.init(
             project='chickpea_grown_predict',
             name=model_name,
             group=args.model_name,
@@ -156,7 +156,7 @@ def train(args):
             f"{model.metrics_names[3]} of {scores[3]}\n"
         )
 
-        wandb.join()
+        wandb_session.finish()
 
 
 if __name__ == "__main__":
