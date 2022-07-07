@@ -8,8 +8,9 @@ import keras_tuner as kt
 import numpy as np
 import pandas as pd
 from keras import backend as K
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.models import load_model
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import train_test_split
 from wandb.keras import WandbCallback
 
 from model import build_model
@@ -88,106 +89,78 @@ def train(args):
             validation_split=0.2,
         )
         tuner.results_summary()
-        best_model = tuner.get_best_models()[0]
+        best_models = tuner.get_best_models(num_models=3)
     else:
-        best_model = load_model(args.base_model)
+        best_models = [load_model(args.base_model)]
 
-    num_folds = args.k_fold
     batch_size = args.bs
     epochs = args.epochs
     verbosity = 1
-    mape_per_fold = []
-    rmse_per_fold = []
-    mae_per_fold = []
-    loss_per_fold = []
 
-    # Define the K-fold Cross Validator
-    fold_no = 1
-    kfold = KFold(n_splits=num_folds, shuffle=True)
-    for tr, valid in kfold.split(train_images, train_predicts):
+    if not os.path.isdir("models"):
+        os.mkdir("models")
+
+    for num, model in enumerate(best_models):
+        model_name = args.model_name + '_model_' + str(num + 1)
+        model_path = 'models/' + model_name + '.h5'
+
         wandb.init(
             project='chickpea_grown_predict',
-            name='fold_' + str(fold_no),
-            group=args.wandb_group_name,
+            name=model_name,
+            group=args.model_name,
             reinit=True
         )
-
-        print(
-            "------------------------------------------------------------------------"
+        mcp_save = ModelCheckpoint(
+            model_path,
+            save_best_only=True,
+            monitor='val_loss',
+            mode='min'
         )
-        print(f"Training for fold {fold_no} ...")
-        best_model.fit(
-            data_images[tr],
-            data_labels[tr],
+        early_stopping = EarlyStopping(
+            monitor='val_loss',
+            patience=10,
+            verbose=0,
+            mode='min'
+        )
+        reduce_lr_loss = ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.1,
+            patience=7,
+            verbose=1,
+            epsilon=1e-4,
+            mode='min'
+        )
+
+        model.fit(
+            data_images,
+            data_labels,
             batch_size=batch_size,
             epochs=epochs,
             verbose=verbosity,
             validation_split=0.2,
-            callbacks=[WandbCallback()],
+            callbacks=[
+                mcp_save,
+                early_stopping,
+                reduce_lr_loss,
+                WandbCallback()
+            ],
         )
 
         # Generate generalization metrics
-        scores = best_model.evaluate(data_images[valid], data_labels[valid], verbose=0)
+        model = load_model(model_path)
+        scores = model.evaluate(test_images, test_labels, verbose=0)
         print(
-            f"Score for fold {fold_no}: "
-            f"{best_model.metrics_names[0]} of {scores[0]}\n"
-            f"{best_model.metrics_names[1]} of {scores[1]}\n"
-            f"{best_model.metrics_names[2]} of {scores[2]}\n"
-            f"{best_model.metrics_names[3]} of {scores[3]}\n"
+            f"{model.metrics_names[0]} of {scores[0]}\n"
+            f"{model.metrics_names[1]} of {scores[1]}\n"
+            f"{model.metrics_names[2]} of {scores[2]}\n"
+            f"{model.metrics_names[3]} of {scores[3]}\n"
         )
 
-        if not os.path.isdir("models"):
-            os.mkdir("models")
-
-        model_path = os.path.join(
-            "models",
-            args.save_model_name + f"_fold_{fold_no}_mae_{round(scores[3] * 365)}.h5",
-        )
-        best_model.save(model_path)
-
-        # if len(loss_per_fold) == 0:
-        #     best_model.save(args.save_model_path)
-        # else:
-        #     if scores[0] < min(loss_per_fold):
-        #         best_model.save(args.save_model_path)
-
-        loss_per_fold.append(scores[0])
-        rmse_per_fold.append(scores[1])
-        mape_per_fold.append(scores[2])
-        mae_per_fold.append(scores[3])
-
-        fold_no = fold_no + 1
-
-    # == Provide average scores ==
-    print("------------------------------------------------------------------------")
-    print("Score per fold")
-    for i in range(0, len(loss_per_fold)):
-        print(
-            "------------------------------------------------------------------------"
-        )
-        print(
-            f"> Fold {i + 1}"
-            f" - Loss: {loss_per_fold[i]}"
-            f" - Root MSE: {rmse_per_fold[i]}%"
-            f" - Mean absolute percentage error: {mape_per_fold[i]}%"
-            f" - Mean absolute error: {mae_per_fold[i]}%"
-        )
-    print("------------------------------------------------------------------------")
-    print("Average scores for all folds:")
-    print(f"> Root MSE: {np.mean(rmse_per_fold)} (+- {np.std(rmse_per_fold)})")
-    print(
-        f"> Mean absolute percentage error: {np.mean(mape_per_fold)} (+- {np.std(mape_per_fold)})"
-    )
-    print(f"> Mean absolute error: {np.mean(mae_per_fold)} (+- {np.std(mae_per_fold)})")
-    print(f"> Loss: {np.mean(loss_per_fold)}")
-    print("------------------------------------------------------------------------")
+        wandb.join()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-wandb_group_name", type=str, default="vigna", help="Entity name for wandb"
-    )
     parser.add_argument(
         "-images_dir", type=str, default="datasets/vigna", help="Directory with images"
     )
@@ -198,7 +171,7 @@ if __name__ == "__main__":
         "-base_model", type=str, default=None, help="Path to pretrained .h5 model"
     )
     parser.add_argument(
-        "-save_model_name",
+        "-model_name",
         type=str,
         default="best_model",
         help="Path to save trained model",
